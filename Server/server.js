@@ -54,7 +54,7 @@ var config = {
     password: process.env.DATABASE_PASSWORD,
     server: process.env.DATABASE_IP,
     database: process.env.DATABASE_NAME,
-    connectionTimeout: 30000,
+    connectionTimeout: 3,
     trustServerCertificate: true
 };
 sql.on('error',
@@ -160,11 +160,13 @@ async function setDescriptions(objArray) {
             }
         }
         else if (splitterArr[i][0].length == 3) {
-            updater = `UPDATE e SET Description = t.Description, Confidence = t.Confidence FROM dbo.${tableName1} e JOIN (VALUES`;
+            updater = `UPDATE e SET Description = t.Description, TechnicalSpecifications = t.TechnicalSpecifications FROM dbo.${tableName1} e JOIN (VALUES`;
         }
+        /*
         else if (splitterArr[i][0].length == 4) {
             updater = `UPDATE e SET Description = t.Description, Confidence = t.Confidence, TechnicalSpecifications = t.TechnicalSpecifications FROM dbo.${tableName1} e JOIN (VALUES`;
         }
+        */
         for (var j = 0; j < splitterArr[i].length; j++) {
             updater += `\(`;
             for (var k = 0; k < splitterArr[i][j].length; k++) {
@@ -196,12 +198,13 @@ async function setDescriptions(objArray) {
             }
         }
         else if (splitterArr[i][0].length == 3) {
-            updater += `) t (ProductIndex, Description, Confidence) ON t.ProductIndex = e.ProductIndex`;
+            updater += `) t (ProductIndex, Description, TechnicalSpecifications) ON t.ProductIndex = e.ProductIndex`;
         }
+        /*
         else if (splitterArr[i][0].length == 4) {
             updater += `) t (ProductIndex, Description, TechnicalSpecifications, Confidence) ON t.ProductIndex = e.ProductIndex`;
         }
-
+        */
         await updaterArr.push(updater);
     }
 
@@ -303,7 +306,7 @@ async function OpenAIRequest(product, choice) {
                         role: "user",
                         content: choice == "description" ? `Write me a product description for the product called "${product.ProductName}", which incorporates humor and is around 400 characters long.`
                             : choice == "oneliner" ? `Write me a short witty introduction for the product called "${product.ProductName}" in one sentence.`
-                                : `Write me a technical specification sheet for the product called "${product.ProductName}" as a table in HTML using <table>, <tbody>, <tr> and <td> tags. Additionally, end the response off with answering whether or not you got the information for the technical specification sheet from the manufacturer themselves.`
+                                : `Write me a technical specification sheet for the product called "${product.ProductName}" as a table in HTML using <table>, <tbody>, <tr> and <td> tags.`
                     }
                 ]
             });
@@ -354,15 +357,17 @@ async function GenerateForProduct(productName) {
     }
     var description = await OpenAIRequest(product, "description");
     var tchspecandconf = await OpenAIRequest(product, "tchspecandconf");
+    /*
     var tchandconfsplit = await tchspecandconf.split(`\n`);
     var confidence = "";
     while (!confidence) {
         confidence = tchandconfsplit.splice(-1).toString();
     }
+    */
     var cmbined = "<b>" + oneliner + "</b>" + "<br>" + description;
     arr.push(cmbined);
-    arr.push(await tchandconfsplit.join(""));
-    arr.push(await confidence.toString().trim());
+    arr.push(tchspecandconf);
+    //arr.push(await confidence.toString().trim());
 
     return await arr;
 }
@@ -406,7 +411,72 @@ async function sendMultiProductsPart(objArray, tableName) {
             arr.forEach((element, index) => inserter += (`\(${element.ProductIndex}, \'${element.ProductName}\', \'${element.Price}\', N\'${null}\', N\'${element.ProductLink}\', \'${null}\', \'${null}\', \'${null}\'\), `));
         }
         else if (tableName == tableName2) {
-            arr.forEach((element, index) => element[1].forEach((elem, ind) => inserter += (`\(${element[0]}, \'${ind + 1}\', N\'${element[2][ind]}\', \'${elem}\'\), `)));
+            //arr.forEach((element, index) => element[1].forEach((elem, ind) => inserter += (`\(${element[0]}, \'${ind + 1}\', N\'${element[2][0][0]}\',  N\'${element[2][1][0][ind % element[2][1][0].length]}\', N\'${element[2][0][1]}\',  N\'${element[2][1][1][ind]}\', \'${elem}\'\), `)));
+
+            console.log(arr[0]);
+            console.log(arr[0][2][1]);
+            //arr.forEach((element, index) => element[2][1].forEach((elm, ind) => elm.forEach((el, inde) => console.log(el))));
+            for (j = 0; j < arr.length; j++) {
+                let PriceCorrector = 0;
+                let ImgArray = [];
+                arr[j][2][2].sort((a, b) => a - b);
+                for (x = 0; x < arr[j][2][1].length; x++)
+                {
+                    if (arr[j][2][1][x].find(a => a.includes("img:"))) {
+                        console.log("triggered for: " + arr[j][2][1][x]);
+                        for (y = 0; y < arr[j][2][1][x].length; y++)
+                        {
+                            if (arr[j][2][1][x][y].includes("img:")) {
+                                let varName = arr[j][2][1][x][y].replace(/img:\d+/g, "").trim();
+                                ImgArray.push(arr[j][2][1][x][y].replace(varName, "").trim());
+                                arr[j][2][1][x][y] = varName;
+                                //console.log(arr[j][2][1][x][y]);
+                            } else
+                            {
+                                ImgArray.push("");
+                            }
+                            
+                        }
+                        ImgArray.unshift(arr[j][2][1][x]);
+                        console.log(ImgArray);
+                    }
+                    else
+                    {
+                        console.log("untriggered for: " + arr[j][2][1][x]);
+                    }
+                }
+                for (i = 0; i < arr[j][2][1][0].length; i++) {
+                    console.log("i: " + i)
+                    //console.log("crash" + arr[j][2][1][1].length);
+                    
+                    for (k = 0; k < arr[j][2][1][1].length; k++) {
+                        console.log("k: " + k)
+                        if (!arr[j][2][2].includes((i * arr[j][2][1][1].length) + k)) {
+                            inserter += (`\(${arr[j][0]}, \'${(i * arr[j][2][1][1].length) + k + 1 - PriceCorrector}\', N\'${arr[j][2][0][0]}\',  N\'${arr[j][2][1][0][i]}\', N\'${arr[j][2][0][1]}\',  N\'${arr[j][2][1][1][k]}\', \'${arr[j][1][(i * arr[j][2][1][1].length) + k - PriceCorrector]}\', ${ImgArray[0][k] == arr[j][2][1][1][k] ? ImgArray[k+1] : 1}\), `);
+                        }
+                        else
+                        {
+                            PriceCorrector++;
+                        }
+                    
+                    //console.log(arr[j][2][1][0][i]);
+                    //console.log(arr[j][2][1][1][k]);
+                    }
+                    
+                }
+            }
+            
+
+            /*
+            for (i = 0; i < nameBefore.length; i++) {
+                for (j = 0; j < nameBefore[i].length; j++) {
+                    nameBefore[i][j] = arr[i % arr.length].charAt(0) + nameBefore[i][j] + arr[i % arr.length].charAt(1);
+                }
+            }
+            */
+
+            //
+            //add the extra functionality here \'${element.StyleName1}\', \'${element.ProductName}\', \'${element.StyleName2}\', \'${element.ProductName2}\', \'${element.StyleName3}\', \'${element.ProductName3}\', <- Also means you have to worry about unpacking.
         }
         inserter = inserter.substring(0, inserter.length - 2) + '\;';
         inserterArr.push(inserter);
@@ -414,8 +484,9 @@ async function sendMultiProductsPart(objArray, tableName) {
     });
 
     //console.log("the length of things: " + objArray.length);
-    //console.log("insertion string: " + inserter);
+    console.log("insertion string: " + inserterArr);
 
+    /*
     try {
         let pool = await sql.connect(config);
         for (const inserter of inserterArr) {
@@ -426,6 +497,7 @@ async function sendMultiProductsPart(objArray, tableName) {
         console.log(error);
         sql.close();
     }
+    */
 }
 
 //Receives an array of data to be inserted in a specific table in the database, and splits it into appropriate lengths.
@@ -464,6 +536,7 @@ async function sendMultipleProducts(objArray, tableName) {
 
     //console.log("Below is all the records.");
     //console.log(objArrayArray);
+
     await deleteAllProducts(tableName);
 
     await sendMultiProductsPart(objArrayArray, tableName);
@@ -918,14 +991,22 @@ async function variationScraper(objectArray) {
 //instead of saving red, blue, 20v, 30v, we save (red) 20v, (red) 30v, (blue) 20v, (blue) 30v. To determine what goes in the parenthesis, I take the segment with the least amount of variations.
 function nameFinder(cheerio) {
     let diffRows = cheerio('[class="goodsspectable mb20"]');
-
+    var n = 0;
     let nameBefore = [...diffRows.find('ul[class="row tac"]')].map(e =>
         [...cheerio(e).find("li")].map(e => cheerio(e).find('img').attr("title")
-            ? cheerio(e).find('img').attr("title").trim().replace(/\"/g, '\"\"')
-            .replace(/\'/g, "\'\'")
-            : cheerio(e).text().trim().replace(/\"/g, '\"\"')
-            .replace(/\'/g, "\'\'"))
+            ? cheerio(e).find('img').attr("title").trim().replace(/\'/g, "\'\'") + ` img:${n++}`
+            : cheerio(e).find('img').attr("src") ? cheerio(e).text().trim().replace(/\'/g, "\'\'") + ` img:${n++}` :
+                cheerio(e).text().trim().replace(/\'/g, "\'\'"))
     );
+
+
+    var styleNames = [...diffRows.find('div[class="pt20 pb10"]')].map(e =>
+        cheerio(e).text().trim().replace(/\"/g, '\"\"')
+            .replace(/\'/g, "\'\'").replace(String.fromCharCode(65306), ':'));
+    
+    //.replace(/\U+FF1A/g, ":")
+    //console.log(styleNames);
+    //console.log(nameBefore);
 
     var arr = [];
     arr.push('');
@@ -978,7 +1059,7 @@ function nameFinder(cheerio) {
         //console.log("SCORN: ", arr);
     }
 
-
+    /*
     nameBefore.sort((a, b) => b.length - a.length);
     for (i = 0; i < nameBefore.length; i++) {
         for (j = 0; j < nameBefore[i].length; j++) {
@@ -990,11 +1071,18 @@ function nameFinder(cheerio) {
         nameBefore[i - 1] = nameBefore[i].flatMap(d => nameBefore[i - 1].map(v => d + ' ' + v));
         nameBefore.splice(i);
     }
+
     for (i = 0; i < notInStockVariations.length; i++)
     {
         nameBefore[0].splice(notInStockVariations[i], 1);
     }
-    return nameBefore[0];
+    */
+    var results = [];
+    results.push(styleNames);
+    results.push(nameBefore);
+    results.push(notInStockVariations);
+    console.log(results);
+    return results;
 }
 
 //Determines whether the provided dataBlock contains variations based on whether there are "keys", id's for variations.
@@ -1420,7 +1508,7 @@ function innerQuestion() {
 }
 //We make sure the program gets the database through asyncrunner, and only after do we run InnerQuestion.
 //asyncRunner().then(() => {
-    innerQuestion();
+//    innerQuestion();
 //});
 
 //SetDescriptionFromJSON();
@@ -1437,8 +1525,11 @@ doVariationScrape({ ProductIndex: 3, ProductName: "Triple Variation Group?", Pro
         console.log(res);
     });
     */
+scrapedData.push({ ProductIndex: 1, ProductName: "The Tick", ProductLink: "https://www.jh-electronica.com/mq-series-gas-detection-module-mq-2mq-3mq-4mq-5mq-6mq-7mq-8mq-9mq-135.shtml" });
+//scrapedData.push({ ProductIndex: 2, ProductName: "Double Variation Group?", ProductLink: "https://www.jh-electronica.com/06609109613154242-inch-white-yellow-blue-two-color-oled-lcd.shtml" });
+sendMultipleProducts(variationScraper(scrapedData), tableName2);
 /*
-doVariationScrape({ ProductIndex: 2, ProductName: "Double Variation Group?", ProductLink: "https://www.jh-electronica.com/06609109613154242-inch-white-yellow-blue-two-color-oled-lcd.shtml"}).then(
+doVariationScrape({ ProductIndex: 2, ProductName: "Double Variation Group?", ProductLink: "https://www.jh-electronica.com/06609109613154242-inch-white-yellow-blue-two-color-oled-lcd.shtml" }).then(
     (res) => {
         console.log(res);
     });

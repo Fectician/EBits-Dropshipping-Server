@@ -1,0 +1,5 @@
+{
+  "Products": [
+    "UPDATE e SET Description = t.Description, SKU = t.SKU FROM dbo.Products e JOIN (VALUES(1, '', 'YXA389')) t (ProductIndex, Description, SKU) ON t.ProductIndex = e.ProductIndex"
+  ]
+}
